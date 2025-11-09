@@ -1,42 +1,51 @@
 name: Build Android JRE 17 (ARM64)
-on: workflow_dispatch
+on: 
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install deps
-        run: |
-          sudo apt update
-          sudo apt -y install autoconf unzip zip python3 systemtap-sdt-dev \
-            libxtst-dev libasound2-dev libelf-dev libfontconfig1-dev \
-            libx11-dev libxext-dev libxrandr-dev libxrender-dev libxt-dev
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git curl unzip zip autoconf make build-essential \
+          libc6-dev libc6-dev-i386 libx11-dev libxext-dev libxrender-dev \
+          libxt-dev libxtst-dev libasound2-dev libfreetype6-dev \
+          systemtap-sdt-dev python3 openjdk-17-jdk-headless
 
-      - name: Clone Android OpenJDK build scripts (Pojav team fork)
-        run: |
-          git clone --depth 1 https://github.com/PojavLauncherTeam/android-openjdk-builds jdk-android
-          cd jdk-android
-          # Build JRE 17 for aarch64 (Android)
-          TARGET_VERSION=17 ./1_ci_build_arch_aarch64.sh
+    - name: Clone OpenJDK 17 source
+      run: |
+        git clone https://github.com/openjdk/jdk17u --depth 1 jdk17
+        ls -l jdk17
 
-      - name: Repack to Amethyst format
-        run: |
-          mkdir -p out
-          # Find the JRE 17 android aarch64 tarball produced by the script
-          JRE_TAR=$(ls -1 jdk-android/jre17-android*aarch64*.tar.xz | head -n1)
-          # Repack so the archive root is bin/lib/release...
-          mkdir repack && cd repack
-          tar -xJf "../$JRE_TAR"
-          # If top folder exists, enter it; then repack contents
-          ROOT=$(ls -1)
-          cd "$ROOT"
-          tar -cJf "../../out/jre17-android-aarch64.tar.xz" *
-          cd ../..
+    - name: Configure for Android ARM64
+      run: |
+        cd jdk17
+        bash configure \
+          --openjdk-target=aarch64-linux-android31 \
+          --disable-warnings-as-errors \
+          --with-toolchain-type=gcc \
+          --with-jvm-variants=server \
+          --with-debug-level=release
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: jre17-android-aarch64
-          path: out/jre17-android-aarch64.tar.xz
+    - name: Build JRE 17
+      run: |
+        cd jdk17
+        make images
+
+    - name: Repack for Amethyst
+      run: |
+        mkdir out
+        cd jdk17/build/*/images/jre
+        tar -cJf ../../../../out/jre17-android-aarch64.tar.xz *
+
+    - name: Upload runtime
+      uses: actions/upload-artifact@v4
+      with:
+        name: jre17-android-aarch64
+        path: out/jre17-android-aarch64.tar.xz
